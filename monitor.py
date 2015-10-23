@@ -1,5 +1,6 @@
 import json
 import os
+import requests
 import urllib3
 from os import listdir
 
@@ -12,20 +13,22 @@ default_config = {
     "timeout": 5,
     "code": 200,
     "text": "",
+    "slack_notify": "https://wiredcraft.slack.com/services/hooks/slackbot?token=4qNSl8UdnaipTg2f36ZnoEU1&channel=song_for_testing",
 }
 
 
-def notify(msg):
+def notify(msg, url):
     print msg
-    # TODO: send message to slack.
+    result = requests.post(url, data=msg.encode("utf-8"))
+    if result.status_code != 200:
+        print "Notification fail!"
 
 
 def get_config(config_file):
     try:
         config = json.loads(open(config_file).read())
     except (ValueError, TypeError, IOError):
-        msg = "config can not be parsed correctly."
-        notify(msg)
+        print "config can not be parsed correctly."
         return
 
     return config
@@ -38,76 +41,58 @@ def handle_config(config):
     if not config.get("code"):
         config['code'] = default_config.get("code")
 
+    if not config.get("slack_notify"):
+        config['slack_notify'] = default_config.get("slack_notify")
+
     return config
 
 
 def health_check(config):
-    http = urllib3.PoolManager()
 
-    if config['method'] == "GET":
-        try:
-            result = http.request(
-                "GET", config['url'],
-                timeout=urllib3.Timeout(total=float(config['timeout'])),
-            )
-        except urllib3.exceptions.ConnectTimeoutError:
-            notify("Service %s timeout" % config['url'])
-            return
-
-    elif config['method'] == "POST":
-        try:
-            result = http.request(
-                "POST", config['url'],
-                timeout=urllib3.Timeout(total=float(config['timeout'])),
-                body=config['body'],
-            )
-        except urllib3.exceptions.ConnectTimeoutError:
-            notify("Service %s timeout" % config['url'])
-            return
-
-    elif config['method'] == "PUT":
-        try:
-            result = http.request(
-                "PUT", config['url'],
-                timeout=urllib3.Timeout(total=float(config['timeout'])),
-                body=config['body'],
-            )
-        except urllib3.exceptions.ConnectTimeoutError:
-            notify("Service %s timeout" % config['url'])
-            return
-
-    elif config['method'] == "DEL":
-        try:
-            result = http.request(
-                "DEL", config['url'],
-                timeout=urllib3.Timeout(total=float(config['timeout'])),
-                body=config['body'],
-
-            )
-        except urllib3.exceptions.ConnectTimeoutError:
-            notify("Service %s timeout" % config['url'])
-            return
-
-    else:
-        notify(
-            "Service %s method is %s, only POST/GET/DEL/PUT are supported", (
+    try:
+        if config['method'] == "GET":
+            result = requests.get(
                 config['url'],
-                config['method']
+                timeout=float(config['timeout']),
             )
-        )
+        elif config['method'] == "POST":
+            result = requests.post(
+                config['url'],
+                timeout=float(config['timeout']),
+            )
+        elif config['method'] == "PUT":
+            result = requests.put(
+                config['url'],
+                timeout=float(config['timeout']),
+            )
+        elif config['method'] == "DEL":
+            result = requests.delete(
+                config['url'],
+                timeout=float(config['timeout']),
+            )
+        else:
+            notify(
+                "Service %s method is %s, only POST/GET/DEL/PUT are supported", (
+                    config['url'],
+                    config['method']
+                ),
+                config['slack_notify']
+            )
+            return
+    except requests.exceptions.Timeout:
+        notify(u"Service %s timeout" % config['url'], config['slack_notify'])
+        return
+    except requests.exceptions.ConnectionError:
+        notify(u"Service %s can not be connected" % config['url'], config['slack_notify'])
+        return
 
-    if result.status != config['code']:
-        msg = "Service %s return code is %s, expect: %s" % (
-            config['url'], result.status, config['code']
+    if result.status_code != config['code'] or result.text != config['text']:
+        msg = u"Service %s return code is %s, expect: %s,\n" \
+        u"return text is %s, expect: %s" % (
+            config['url'], result.status_code, config['code'],
+            result.text, config['text']
         )
-        notify(msg)
-
-    if result.data != config['text']:
-        msg = "Service %s return text is %s, expect: %s" % (
-            config['url'], result.data, config['text']
-        )
-        notify(msg)
-
+        notify(msg, config['slack_notify'])
     return
 
 
