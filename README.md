@@ -20,6 +20,7 @@ This dictionary contains several keys, the value of each key has a default value
 * body: POST data, if method is POST.
 * code: HTTP status code returned should match this code.
 * slack_notify: The URL that this tool tries to notify to if any thing wrong about the check, alerting people to focus.
+* headers: After decoded using json, the value of headers is supposed to be a directory, each key/value pair is a HTTP header key/value. refer to http://docs.python-requests.org/en/latest/user/quickstart/#custom-headers
 
 Sample config:
 
@@ -30,7 +31,10 @@ Sample config:
   "timeout": 4,
   "text": "wiredcraft",
   "code": 200,
-  "slack_notify": "https://wiredcraft.slack.com/services/hooks/slackbot?token=4qNSl8UdnaipTg2f36ZnoEU1&channel=song_for_testing"
+  "slack_notify": "https://wiredcraft.slack.com/services/hooks/slackbot?token=4qNSl8UdnaipTg2f36ZnoEU1&channel=song_for_testing",
+  "headers": {
+    "user-agent": "Mozilla"
+  }
 }
 
 How to install it:
