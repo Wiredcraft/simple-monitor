@@ -9,6 +9,7 @@ default_config = {
     "url": "",
     "method": "POST",
     "body": "",  # exists only if method is POST
+    "headers": {},
     "timeout": 5,
     "code": 200,
     "text": "",
@@ -16,73 +17,90 @@ default_config = {
 }
 
 
-def notify(msg, url):
+def notify(msg, url, description=None):
+    '''
+    Send message to Notification channel
+    '''
     print msg
+    if description: 
+        msg = "[%s] %s" % (description, msg)
     result = requests.post(url, data=msg.encode("utf-8"))
     if result.status_code != 200:
         print "Notification fail!"
 
 
 def get_config(config_file):
+    '''
+    Load web checks from config file
+    '''
     try:
-        config = json.loads(open(config_file).read())
-    except (ValueError, TypeError, IOError):
-        print "config can not be parsed correctly."
-        return
+        with open(config_file) as c:
+            config = json.load(c)
+    except Exception as e:
+        print "Config can not be parsed correctly: %s" % e
+        raise
 
     return config
 
 
 def handle_config(config):
-    if not config.get("timeout"):
-        config['timeout'] = default_config.get("timeout")
-
-    if not config.get("code"):
-        config['code'] = default_config.get("code")
-
-    if not config.get("slack_notify"):
-        config['slack_notify'] = default_config.get("slack_notify")
+    '''
+    Set defaults of each web check
+    '''
+    for attr in ('timeout', 'code', 'slack_notify', 'headers'):
+        config.setdefault(attr, default_config[attr])
 
     return config
 
 
 def health_check(config):
-
+    '''
+    Perform the monitoring check
+    '''
+    print 'Start check: %s - %s' % (config.get('description'), config.get('url'))
     try:
         if config['method'] == "GET":
             result = requests.get(
                 config['url'],
-                timeout=float(config['timeout']),
+                headers = config['headers'],
+                timeout = float(config['timeout']),
             )
         elif config['method'] == "POST":
             result = requests.post(
                 config['url'],
-                timeout=float(config['timeout']),
+                data = json.dumps(config['body']),
+                headers = config['headers'],
+                timeout = float(config['timeout']),
             )
         elif config['method'] == "PUT":
             result = requests.put(
                 config['url'],
-                timeout=float(config['timeout']),
+                headers = config['headers'],
+                timeout = float(config['timeout']),
             )
         elif config['method'] == "DEL":
             result = requests.delete(
                 config['url'],
-                timeout=float(config['timeout']),
+                headers = config['headers'],
+                timeout = float(config['timeout']),
             )
         else:
             notify(
-                "Service %s method is %s, only POST/GET/DEL/PUT are supported", (
+                "Service %s method is %s, only POST/GET/DEL/PUT are supported" % (
                     config['url'],
                     config['method']
                 ),
-                config['slack_notify']
+                config['slack_notify'],
+                config.get('description')
             )
             return
+
     except requests.exceptions.Timeout:
-        notify(u"Service %s timeout" % config['url'], config['slack_notify'])
+        notify(u"Service %s timeout" % config['url'], config['slack_notify'], config.get('description'))
         return
+
     except requests.exceptions.ConnectionError:
-        notify(u"Service %s can not be connected" % config['url'], config['slack_notify'])
+        notify(u"Service %s can not be connected" % config['url'], config['slack_notify'], config.get('description'))
         return
 
     if result.status_code != config['code'] or result.text != config['text']:
@@ -91,12 +109,12 @@ def health_check(config):
             config['url'], result.status_code, config['code'],
             result.text, config['text']
         )
-        notify(msg, config['slack_notify'])
+        notify(msg, config['slack_notify'], config.get('description'))
     return
 
 
 def main():
-    for filename in listdir('.'):
+    for filename in listdir('./checks'):
         _, file_extension = os.path.splitext(filename)
         if file_extension == '.conf':
             read_config = get_config(filename)
@@ -107,4 +125,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        print e
+        notify('Error while running monitor check. Check logs.', default_config.get('slack_notify'))
